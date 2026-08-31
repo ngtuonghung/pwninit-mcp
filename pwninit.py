@@ -103,7 +103,7 @@ class LibcVersion:
     def base_pkgurl(self):
         if self.os == "Ubuntu":
             # works for both glibc and eglibc
-            return "https://launchpad.net/ubuntu/+archive/primary/+files/"
+            return "https://archive.ubuntu.com/ubuntu/pool/main/g/glibc/"
         if self.os == "Debian":
             if self.is_glibc:
                 return "https://deb.debian.org/debian/pool/main/g/glibc/"
@@ -123,10 +123,21 @@ class LibcVersion:
 
     @property
     def libc_dbg_pkgurl(self):
-        return self._format_pkgurl(self.libc_dbg_debname)
+        urls = []
+        if self.libc_dbg_debname:
+            main_url = self._format_pkgurl(self.libc_dbg_debname)
+            if main_url:
+                urls.append(main_url)
+        if self.os == "Ubuntu" and self.pkgname and self.arch:
+            ddeb_name = f"libc6-dbgsym_{self.pkgname}_{self.arch}.ddeb"
+            urls.append(f"http://ddebs.ubuntu.com/pool/main/g/glibc/{ddeb_name}")
+            urls.append(f"https://launchpad.net/ubuntu/+archive/primary/+files/{ddeb_name}")
+        return urls[0] if len(urls) == 1 else (urls if urls else None)
 
     @property
     def libc_src_pkgurl(self):
+        if self.os == "Ubuntu" and self.libc_src_debname:
+            return f"https://archive.ubuntu.com/ubuntu/pool/universe/g/glibc/{self.libc_src_debname}"
         return self._format_pkgurl(self.libc_src_debname)
 
     @property
@@ -141,15 +152,22 @@ class LibcVersion:
             "mips64el": "mips64el-linux-gnuabi64",
             "pp64el": "powerpc64le-linux-gnu",
             "s390x": "s390x-linux-gnu",
+            "riscv64": "riscv64-linux-gnu",
         }.get(self.arch, None)
 
     def get_libc6_pkg_paths(self, name):
-        return [
-            os.path.join(f"./lib/{self.arch_linux_gnu}/", name),
-            # seems to be used in ubuntu glibc 2.39
-            os.path.join(f"./usr/lib/{self.arch_linux_gnu}/", name),
-            # os.path.join(f"./usr/lib{bits}/", name),  # for libc6-i386_amd64 (32) / libc6-amd64_i386 (64) packages
-        ]
+        arch_gnu = self.arch_linux_gnu or ""
+        paths = []
+        if arch_gnu:
+            paths.append(f"./lib/{arch_gnu}/{name}")
+            paths.append(f"./usr/lib/{arch_gnu}/{name}")
+        paths.extend([
+            f"./lib64/{name}",
+            f"./usr/lib64/{name}",
+            f"./lib/{name}",
+            f"./usr/lib/{name}",
+        ])
+        return paths
     
     @property
     def supported_architectures(self):
@@ -176,7 +194,7 @@ def is_libc6_lib(lib_name):
     """Return True if lib_name is expected to be part of the libc6 package."""
     return lib_name in LIBC6_LIB_NAMES or lib_name.startswith("libnss_")
 
-# Maps glibc version tuple (major, minor) to Ubuntu codename.
+# Maps glibc version tuple (major, minor) to Ubuntu / Debian codename.
 GLIBC_VERSION_TO_CODENAME = {
     (2, 17): "saucy",
     (2, 19): "trusty",
@@ -185,7 +203,7 @@ GLIBC_VERSION_TO_CODENAME = {
     (2, 24): "stretch",  # Debian
     (2, 26): "artful",
     (2, 27): "bionic",
-    (2, 28): "cosmic",
+    (2, 28): "focal",    # or buster for Debian
     (2, 29): "disco",
     (2, 30): "eoan",
     (2, 31): "focal",
@@ -193,11 +211,14 @@ GLIBC_VERSION_TO_CODENAME = {
     (2, 33): "hirsute",
     (2, 34): "impish",
     (2, 35): "jammy",
-    (2, 36): "kinetic",
+    (2, 36): "kinetic",  # or bookworm for Debian
     (2, 37): "lunar",
     (2, 38): "mantic",
     (2, 39): "noble",
-    (2, 40): "oracular",
+    (2, 40): "oracular", # or trixie for Debian
+    (2, 41): "plucky",
+    (2, 42): "questy",
+    (2, 43): "resolute",
 }
 
 # Maps lib name (from get_lib_name()) to Ubuntu package name that ships it.
@@ -206,16 +227,37 @@ EXTERNAL_LIB_TO_PACKAGE = {
     # libcrypto.so.1.1 and libssl.so.1.1 come from libssl1.1
     # libcrypto.so.3 and libssl.so.3 come from libssl3
     # libcrypto.so.1.0.0 and libssl.so.1.0.0 come from libssl1.0.0
-    "libcrypto": ["libssl3", "libssl1.1", "libssl1.0.0"],
-    "libssl":    ["libssl3", "libssl1.1", "libssl1.0.0"],
-    "libz":      ["zlib1g"],
-    "libgmp":    ["libgmp10"],
-    "libgcc_s":  ["libgcc-s1", "libgcc1"],
-    "libstdc++": ["libstdc++6"],
+    "libcrypto":  ["libssl3", "libssl1.1", "libssl1.0.0"],
+    "libssl":     ["libssl3", "libssl1.1", "libssl1.0.0"],
+    "libseccomp": ["libseccomp2"],
+    "libcap":     ["libcap2"],
+    "libffi":     ["libffi8", "libffi7", "libffi6"],
+    "libsqlite3": ["libsqlite3-0"],
+    "libcurl":    ["libcurl4", "libcurl3-gnutls", "libcurl3"],
+    "libevent":   ["libevent-2.1-7", "libevent-2.1-6"],
+    "libprotobuf":["libprotobuf32", "libprotobuf23", "libprotobuf17", "libprotobuf10", "libprotobuf-c1"],
+    "libbsd":     ["libbsd0"],
+    "libjansson": ["libjansson4"],
+    "libyaml":    ["libyaml-0-2"],
+    "libmsgpack": ["libmsgpack-c2", "libmsgpackc2"],
+    "libuv":      ["libuv1"],
+    "libz":       ["zlib1g"],
+    "libgmp":     ["libgmp10"],
+    "libgcc_s":   ["libgcc-s1", "libgcc1"],
+    "libstdc++":  ["libstdc++6"],
 }
 
 # Directory where downloaded .deb packages are cached to avoid re-downloading.
-DEB_CACHE_DIR = "lib"
+# Default to global ~/.cache/pwninit with fallback to local ./lib
+def get_deb_cache_dir():
+    global_cache = os.path.expanduser("~/.cache/pwninit")
+    try:
+        os.makedirs(global_cache, exist_ok=True)
+        return global_cache
+    except OSError:
+        return "lib"
+
+DEB_CACHE_DIR = get_deb_cache_dir()
 
 
 # takes the form: libname.so.XXX, libname.so, libname-2.27.so, libname_2.27.so
@@ -752,6 +794,14 @@ def patch_binary_patchelf(path, libraries, output=None, dont_patch=None):
             log.error(f"Failed to replace {lib!r} with {patch!r}: {stderr!r}")
         else:
             successful_patches += 1
+
+    # Set RPATH to ensure libraries in binary/current directory are resolved
+    _, rpath_err = utils.run_patchelf(output, ["--set-rpath", "$ORIGIN:."])
+    if rpath_err:
+        log.warning(f"Could not set RPATH: {rpath_err!r}")
+    else:
+        log.info("Set RPATH to '$ORIGIN:.'")
+
     missing_patches = number_of_patches - successful_patches
     if successful_patches == 0:
         log.warning(f"No patches were made")
@@ -801,15 +851,18 @@ def get_libc_version(libc, arch=None):
         for line in f:
             parts = line.split(b"GNU C Library ", 1)
             if len(parts) == 2:
-                version = LibcVersion(parts[1].decode(), arch)
-                log.info(f"libc version: {version}")
-                if version.is_custom:
-                    # pkgname is None here as well
-                    # but the reason for it here is custom compilation
-                    log.warning("Libc appears to be custom-compiled")
-                elif version.pkgname is None:
-                    log.warning("Name of package not present in libc version string")
-                return version
+                # Safely split on null byte or newline and decode with error replacement
+                raw_str = parts[1].split(b"\x00")[0].split(b"\n")[0].decode("utf-8", errors="ignore")
+                version = LibcVersion(raw_str, arch)
+                if version.version_string is not None:
+                    log.info(f"libc version: {version}")
+                    if version.is_custom:
+                        # pkgname is None here as well
+                        # but the reason for it here is custom compilation
+                        log.warning("Libc appears to be custom-compiled")
+                    elif version.pkgname is None:
+                        log.warning("Name of package not present in libc version string")
+                    return version
     log.error("Failed to find libc version")
     return None
 
@@ -894,8 +947,20 @@ if __name__ == "__main__":
     elif libraries.get("libc", None):
         libc = libraries["libc"]
         log.info(f"libc: {libc}")
-        # TODO: if arch is "arm", use libc to decide between armel and armhf
-        # this can be determined with the flags in the header
+        if arch == "arm":
+            # Determine armhf vs armel using e_flags in ELF header
+            try:
+                with open(libc, "rb") as f_libc:
+                    libc_elf = ELFFile(f_libc)
+                    e_flags = libc_elf.header.get("e_flags", 0)
+                    # EF_ARM_ABI_FLOAT_HARD = 0x400
+                    if e_flags & 0x400:
+                        arch = "armhf"
+                    else:
+                        arch = "armel"
+                log.info(f"Refined arm architecture to {arch!r} from libc e_flags")
+            except Exception as e:
+                log.warning(f"Could not refine arm architecture from libc: {e}")
         version = get_libc_version(libc, arch=arch)
 
         print()

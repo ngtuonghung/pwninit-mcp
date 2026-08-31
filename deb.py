@@ -15,33 +15,62 @@ class DebPackage:
         self.tar = None
         self.tempdir = tempfile.mkdtemp()  # always needed for tar extraction
         self.error = None
-        debname = url.split("/")[-1]
-        # Use cached deb if available
+        urls = [url] if isinstance(url, str) else list(url)
+        debname = urls[0].split("/")[-1]
+
+        # Add fallback URL for ubuntu archive packages if not already present
+        if any("archive.ubuntu.com" in u for u in urls):
+            lp_fallback = f"https://launchpad.net/ubuntu/+archive/primary/+files/{debname}"
+            if lp_fallback not in urls:
+                urls.append(lp_fallback)
+
+        # Use cached deb if available (check passed cache_dir first, then global cache)
+        candidate_cache_dirs = []
         if cache_dir:
-            os.makedirs(cache_dir, exist_ok=True)
-            debpath = os.path.abspath(os.path.join(cache_dir, debname))
-            if os.path.isfile(debpath):
-                import log as _log
-                _log.info(f"Using cached {debname!r} from {cache_dir!r}")
-                self.tar = self._get_data_tar(debpath)
-                return
-        else:
-            debpath = os.path.join(self.tempdir, debname)
-        # Download
+            candidate_cache_dirs.append(cache_dir)
+        global_cache = os.path.expanduser("~/.cache/pwninit")
+        if global_cache not in candidate_cache_dirs:
+            candidate_cache_dirs.append(global_cache)
+
+        for cdir in candidate_cache_dirs:
+            try:
+                os.makedirs(cdir, exist_ok=True)
+                cached_path = os.path.abspath(os.path.join(cdir, debname))
+                if os.path.isfile(cached_path):
+                    import log as _log
+                    _log.info(f"Using cached {debname!r} from {cdir!r}")
+                    self.tar = self._get_data_tar(cached_path)
+                    return
+            except OSError:
+                continue
+
+        # Save downloaded deb to primary cache dir or tempdir
         try:
-            r = requests.get(url, stream=True)
-        except Exception as exception:
-            self.error = str(exception)
+            debpath = os.path.abspath(os.path.join(candidate_cache_dirs[0], debname))
+        except Exception:
+            debpath = os.path.join(self.tempdir, debname)
+
+        # Download
+        resp = None
+        for u in urls:
+            try:
+                r = requests.get(u, stream=True)
+                if r.status_code == 200:
+                    resp = r
+                    break
+                else:
+                    self.error = f"GET request returned {r.status_code}"
+            except Exception as exception:
+                self.error = str(exception)
+                continue
+        if resp is None or resp.status_code != 200:
             return
-        if r.status_code != 200:
-            self.error = f"GET request returned {r.status_code}"
-            return
-        total = int(r.headers.get("Content-Length", 0)) or None
+        total = int(resp.headers.get("Content-Length", 0)) or None
         with open(debpath, "wb+") as f, tqdm.tqdm(
             total=total, unit="B", unit_scale=True, unit_divisor=1024,
             desc=debname, leave=False
         ) as bar:
-            for chunk in r.iter_content(chunk_size=65536):
+            for chunk in resp.iter_content(chunk_size=65536):
                 f.write(chunk)
                 bar.update(len(chunk))
         # extract data.tar from deb to the tempdir

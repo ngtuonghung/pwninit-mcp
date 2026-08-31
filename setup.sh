@@ -32,12 +32,15 @@ else
     echo "[!] Python requirements already installed, skipping."
 fi
 
+mkdir -p "$HOME/.cache/pwninit"
+
 echo "[*] Appending alias to ~/.bashrc..."
 
-ALIAS_LINE="alias pwninit='source \"$VENV_DIR/bin/activate\" && python3 \"$SCRIPT_DIR/pwninit.py\" -t default \"\$@\"; deactivate'"
+ALIAS_LINE="alias pwninit='\"$VENV_DIR/bin/python3\" \"$SCRIPT_DIR/pwninit.py\" -t default \"\$@\"'"
 
 if grep -qF "alias pwninit=" ~/.bashrc; then
-    echo "[!] Alias 'pwninit' already exists in ~/.bashrc, skipping."
+    echo "[!] Alias 'pwninit' already exists in ~/.bashrc, updating if needed."
+    sed -i '/alias pwninit=/c\'"$ALIAS_LINE" ~/.bashrc
 else
     echo "" >> ~/.bashrc
     echo "# pwninit.py alias" >> ~/.bashrc

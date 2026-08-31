@@ -1,94 +1,98 @@
 # pwninit.py
 
-A tool for intialization of ctf pwn challenges based on https://github.com/io12/pwninit.
-
-## Changes
-
-* **`setup.sh`**: Added automated setup script that installs system dependencies, creates a Python venv at `.venv/`, installs `requirements.txt`, and appends a `pwninit` alias to `~/.bashrc`. All steps are idempotent (skipped if already done). Reloads the shell via `exec bash` on completion.
-* **`pwninit.py`**: Added `checksec=False` to the generated `ELF()` binding for the binary in `solve.py`, consistent with libc and ld bindings.
-* **`deb.py`**: Added `tqdm` progress bar when downloading `.deb` packages.
-* **`requirements.txt`**: Added `tqdm`.
-* **`.gitignore`**: Added `.venv/`.
-* **`pwninit.py`** (non-libc6 library support): Added automatic fetching of external shared libraries (e.g. `libcrypto.so.1.1`, `libssl.so.1.1`) that are required by the binary but not part of `libc6`. The correct Ubuntu package is located via the Launchpad REST API using the glibc version to determine the Ubuntu codename. Supported external libraries are listed in `EXTERNAL_LIB_TO_PACKAGE`. If a library cannot be fetched automatically and is not already present in the current directory, pwninit exits with a clear error message.
-* **`pwninit.py`** (recursive dependency resolution): Replaced the previous flat `fetch_missing_libraries` + `fetch_transitive_libc6_deps` approach with a fully recursive resolver (`resolve_lib` / `resolve_all_deps`). Starting from the binary's `NEEDED` entries, it fetches each missing library, then recurses into that library's own `NEEDED` entries, and so on until the full dependency tree is satisfied. After all deps are resolved, external libraries (non-libc6) are patched so their own `NEEDED` entries point to the local copies instead of the system ones. This fixes issues like `libcrypto.so.1.1` pulling in the system's `libdl.so.2` / `libpthread.so.0` (which are a newer glibc version) instead of the challenge's version.
-* **`deb.py`** (`.deb` package caching): `DebPackage` now accepts a `cache_dir` parameter. When set, downloaded `.deb` files are saved to that directory and reused on subsequent runs, avoiding redundant downloads. The cached path is made absolute to ensure `ar` can locate it regardless of working directory.
-* **`pwninit.py`** (`DEB_CACHE_DIR`): Downloaded `.deb` packages are cached in `./lib/` (relative to the challenge directory) by default, shared across the libc6, libc6-dbg, and external package downloads.
+Python tool to automate CTF pwn challenge setup, based on [pwninit](https://github.com/io12/pwninit).
 
 ## Features
 
-* Downloads the correct interpreter to run the binary.
-* Downloads other standard glibc libraries required by the binary, like `libpthread` or `libm` for example.
-* **Recursively resolves the full shared library dependency tree**, including transitive dependencies of non-libc6 libraries.
-* **Automatically fetches non-libc6 libraries** (e.g. `libcrypto`, `libssl`, `libz`, `libstdc++`) from the matching Ubuntu package using the Launchpad API, based on the glibc version embedded in the provided libc.
-* **Patches external libraries** so their own NEEDED entries point to local copies, preventing version mismatches with system libraries.
-* **Caches downloaded `.deb` packages** in `./lib/` to avoid re-downloading on repeated runs.
-* Downloads debug symbols and unstrips all libraries, including `libc.so.*`, `ld-linux.so.*`, and other libraries.
-* Patches the binary to use the correct interpreter and libraries, either manually or with `patchelf`.
-* Writes a solve script to the current directory from a selection of customizable templates.
-* Script that fetches glibc source code for better debugging.
-* Supports Ubuntu/Debian glibc.
+- Downloads matching dynamic linkers (`ld.so`) and required libraries (`libpthread`, `libm`, etc.).
+- Resolves library dependencies, including non-libc6 packages like `libcrypto`, `libssl`, `libseccomp`, `libcap`, and `libz`.
+- Downloads debug symbols and unstrips libraries.
+- Caches `.deb` archives in `~/.cache/pwninit/` and `./lib/`.
+- Patches binaries with local library paths using direct byte replacement or `patchelf`.
+- Generates exploit scripts (`solve.py`) from customizable templates.
+- Fetches and extracts glibc source code via `pwnsrc.py` for source-level debugging in GDB.
+- Supports Ubuntu and Debian glibc packages.
 
-## Install dependencies
+## Installation
 
-Run
+Run the setup script:
+
 ```bash
 ./setup.sh
 ```
-This installs system dependencies, creates a Python venv, installs required packages, and adds a `pwninit` alias to `~/.bashrc`. All steps are skipped if already done.
 
-Note: Requires python 3.10+ (for `match/case` in the solve template)
+The script installs `binutils`, `elfutils`, and `patchelf`, creates a virtual environment at `.venv/`, installs Python requirements, creates `~/.cache/pwninit/`, and registers a `pwninit` alias in `~/.bashrc`.
+
+Requires Python 3.10+.
 
 ## Usage
 
-### `pwninit.py`
+### pwninit.py
 
-Run `pwninit.py` inside the folder containing the binary (and libraries if they are provided), and it will automatically find the binary and libraries.
-You can also specify the binary, libc or interpreter using `-b/--bin`, `--libc` and `--ld`.
+Run `pwninit.py` in the directory containing the target binary and libc:
 
-### `pwnsrc.py`
+```bash
+pwninit
+```
 
-This is an additional script which uses the `libc` to download glibc source code files.
-This is useful in combination with debug symbols and a debugger like `gdb` which can list the source code relevant to the current point in the program's execution, and is very helpful in cases where you need to debug the inner workings of certain parts of glibc, such as `malloc`, `printf`, `dl-runtime` and more.
+Specify inputs directly if needed:
 
-Running `pwnsrc.py` the first time will download a `.tar.xz` archive containing the glibc source code, using the libc to get the correct version.
-Like `pwninit.py`, `pwnsrc.py` will automatically find the libc, and it can also be specified with `--libc`.
+```bash
+pwninit --bin ./chall --libc ./libc.so.6 --ld ./ld-linux-x86-64.so.2
+```
 
-Once the archive has been downloaded, you can start extracting files from it, either manually or by using `--files`.
-Any number of files can be specified with `--files`, and it can be the basename (e.g. `malloc.c`) or the full path (e.g. `glibc-2.31/malloc/malloc.c`).
+Options:
+- `-b, --bin <file>`: Binary to patch.
+- `--libc <file>`: Target libc.
+- `--ld <file>`: Target interpreter.
+- `-nu, --no-unstrip`: Skip unstripping debug symbols.
+- `-np, --no-patch`: Skip patching the binary.
+- `-ns, --no-solvepy`: Skip writing `solve.py`.
+- `--use-patchelf`: Patch using `patchelf` instead of direct byte replacement.
+- `-l, --libs <dir>`: Directory to store resolved libraries.
+- `-t, --template <name>`: Template for `solve.py` (`default` or `static`).
+- `-o, --output <file>`: Output path for patched binary (defaults to `<bin>_patched`).
 
-`pwnsrc.py` will automatically find the archive if it exists, or it can be specified with `-s/--source`.
+### pwnsrc.py
 
-### Custom `solve.py` templates
+Download and extract glibc source files for GDB source stepping:
 
-You can specify which template to use using `-t/--template`.
-There are two templates provided by default, but you can change these by adding files or editing files in the `templates` folder, the path of which is also provided when you run `-h/--help`.
-The string `{bindings}` in the templates is used to substitute in the `ELF("<binary>")` initializations for the binary, libc and interpreter.
+```bash
+# Download glibc source archive for the local libc
+python3 pwnsrc.py
 
-### `config.py`
+# Extract specific source files
+python3 pwnsrc.py --files malloc.c
+python3 pwnsrc.py --files glibc-2.31/malloc/malloc.c
+```
 
-This file contains some configuration options that can be changed by editing the file.
-The options include:
-* Names of `binary`, `libc`, `ld` in the `solve.py` template.
-* Default `solve.py` template.
-* Whether to use `patchelf` by default.
+### Solve Script Templates
 
-The path of this file is provided when you run `-h/--help`.
+Select templates with `-t <template_name>`. The tool loads templates from `templates/`:
+- `default`: Pwntools template with terminal auto-detection, local/remote connectors, memory limit guards, and GDB attach logic.
+- `static`: Minimal template for statically linked binaries.
 
-### Patching
+Templates replace `{bindings}` with ELF initializers for the binary, libc, and loader.
 
-One major change from the original [pwninit](https://github.com/io12/pwninit) is that patching the binary is done manually by default.
-The major reason for this is that even though `patchelf` is more versatile, its method of patching can cause side effects for the binary.
-This happens because it has to resize and move data sections, and so the binary is loaded into memory differently to how it would've been without patching.
-While this doesn't usually affect the intended behaviour of the binary, it can sometimes affect exploitation, which is a problem as the whole point of `pwninit` is to simulate the remote environment.
-This isn't a very common problem, so in most cases `patchelf` is fine, but personally I have run into issues with `patchelf` in the past.
+### Configuration
 
-The way this manual patching is done is effectively a simpler version of `patchelf --replace-needed` and `patchelf --set-interpreter`, but it uses relative paths of symlinks which are shorter than the target strings.
+Edit `config.py` to change defaults:
+- `TEMPLATE_BINARY_NAME`: Variable name for binary in `solve.py` (default: `e`).
+- `TEMPLATE_LIBC_NAME`: Variable name for libc (default: `libc`).
+- `TEMPLATE_LD_NAME`: Variable name for loader (default: `ld`).
+- `DEFAULT_TEMPLATE`: Default template (default: `default`).
+- `USE_PATCHELF`: Set `True` to use `patchelf` by default.
 
-This can be disabled by using `--use-patchelf`.
+### Patching Methods
+
+`pwninit.py` provides two patching methods:
+
+1. **Direct byte replacement (default)**: Overwrites `PT_INTERP` and `DT_NEEDED` entries in the ELF string table with shorter relative symlink paths (`./ld`, `./libc`). This preserves original section offsets and file layout.
+2. **Patchelf (`--use-patchelf`)**: Uses `patchelf` to set the interpreter, replace library names, and inject `$ORIGIN:.` into `DT_RPATH`.
 
 ## Examples
 
-### `pwninit.py`
+### Initializing a standard challenge
 
 ```bash
 $ ls
@@ -96,20 +100,20 @@ chall  libc.so.6
 $ readelf -Wd ./chall | grep NEEDED
  0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
  0x0000000000000001 (NEEDED)             Shared library: [libpthread.so.0]
-$ pwninit.py 
+$ pwninit
 [*] bin: chall (arch = 'amd64')
 [*] libc: libc.so.6
 [*] libc version: (Ubuntu GLIBC 2.31-0ubuntu9.2) stable release version 2.31.
 
-[*] Resolving library dependencies recursively (cache: 'lib')...
-[*] Fetching 'libpthread.so.0' from https://launchpad.net/ubuntu/+archive/primary/+files/libc6_2.31-0ubuntu9.2_amd64.deb
+[*] Resolving library dependencies recursively (cache: '/home/user/.cache/pwninit')...
+[*] Fetching 'libpthread.so.0' from https://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6_2.31-0ubuntu9.2_amd64.deb
 [+] Successfully fetched 'libpthread.so.0'
-[*] Fetching 'ld-linux-x86-64.so.2' from https://launchpad.net/ubuntu/+archive/primary/+files/libc6_2.31-0ubuntu9.2_amd64.deb (cached)
+[*] Fetching 'ld-linux-x86-64.so.2' from https://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6_2.31-0ubuntu9.2_amd64.deb (cached)
 [+] Successfully fetched 'ld-linux-x86-64.so.2'
 
 [*] Finding stripped libraries to unstrip
 [*] Unstripping 'libc.so.6', 'libpthread.so.0', 'ld-linux-x86-64.so.2'
-[*] Fetching debug symbols from https://launchpad.net/ubuntu/+archive/primary/+files/libc6-dbg_2.31-0ubuntu9.2_amd64.deb
+[*] Fetching debug symbols from https://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6-dbg_2.31-0ubuntu9.2_amd64.deb
 [+] Successfully unstripped 'libc.so.6'
 [+] Successfully unstripped 'libpthread.so.0'
 [+] Successfully unstripped 'ld-linux-x86-64.so.2'
@@ -123,10 +127,10 @@ $ pwninit.py
 [*] Writing solve.py
 [+] Successfully written solve.py
 $ ls
-chall  chall_patched  ld  ld-linux-x86-64.so.2  lib/  libc  libc.so.6  libpthread  libpthread.so.0  solve.py
+chall  chall_patched  ld  ld-linux-x86-64.so.2  libc  libc.so.6  libpthread  libpthread.so.0  solve.py
 ```
 
-#### Example with a binary that requires OpenSSL (`libcrypto.so.1.1`)
+### Challenge requiring OpenSSL (`libcrypto.so.1.1`)
 
 ```bash
 $ ls
@@ -134,20 +138,20 @@ chall  libc.so.6
 $ readelf -Wd ./chall | grep NEEDED
  0x0000000000000001 (NEEDED)             Shared library: [libcrypto.so.1.1]
  0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
-$ pwninit.py
+$ pwninit
 [*] bin: chall (arch = 'amd64')
 [*] libc: libc.so.6
 [*] libc version: (Ubuntu GLIBC 2.27-3ubuntu1) stable release version 2.27.
 
-[*] Resolving library dependencies recursively (cache: 'lib')...
+[*] Resolving library dependencies recursively (cache: '/home/user/.cache/pwninit')...
 
 [*] Fetching 'libcrypto.so.1.1' from https://launchpadlibrarian.net/.../libssl1.1_1.1.1-1ubuntu2.1~18.04.23_amd64.deb
 [+] Successfully fetched 'libcrypto.so.1.1'
-[*] Fetching 'libdl.so.2' from https://.../libc6_2.27-3ubuntu1_amd64.deb
+[*] Fetching 'libdl.so.2' from https://archive.ubuntu.com/.../libc6_2.27-3ubuntu1_amd64.deb
 [+] Successfully fetched 'libdl.so.2'
-[*] Fetching 'libpthread.so.0' from https://.../libc6_2.27-3ubuntu1_amd64.deb (cached)
+[*] Fetching 'libpthread.so.0' from https://archive.ubuntu.com/.../libc6_2.27-3ubuntu1_amd64.deb (cached)
 [+] Successfully fetched 'libpthread.so.0'
-[*] Fetching 'ld-linux-x86-64.so.2' from https://.../libc6_2.27-3ubuntu1_amd64.deb (cached)
+[*] Fetching 'ld-linux-x86-64.so.2' from https://archive.ubuntu.com/.../libc6_2.27-3ubuntu1_amd64.deb (cached)
 [+] Successfully fetched 'ld-linux-x86-64.so.2'
 
 [*] Patching transitive deps in 'libcrypto.so.1.1'
@@ -168,7 +172,7 @@ $ pwninit.py
 [+] Successfully written solve.py
 ```
 
-### `pwnsrc.py`
+### Fetching glibc source code
 
 ```bash
 $ ls
@@ -176,7 +180,7 @@ dd1  libc-2.23.so
 $ pwnsrc.py
 [*] libc: libc-2.23.so
 [*] libc version: (Ubuntu GLIBC 2.23-0ubuntu10) stable release version 2.23, by Roland McGrath et al.
-[*] Fetching glibc source from https://launchpad.net/ubuntu/+archive/primary/+files/glibc-source_2.23-0ubuntu10_all.deb
+[*] Fetching glibc source from https://archive.ubuntu.com/ubuntu/pool/universe/g/glibc/glibc-source_2.23-0ubuntu10_all.deb
 [+] Successfully written glibc-source to 'glibc-source-2.23.tar.xz'
 $ ls
 dd1  glibc-source-2.23.tar.xz  libc-2.23.so

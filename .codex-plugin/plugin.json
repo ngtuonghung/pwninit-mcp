@@ -1,0 +1,27 @@
+{
+  "name": "pwninit",
+  "version": "0.2.0",
+  "description": "Automates CTF pwn challenge setup: fetches the matching loader and libraries, unstrips libc, and patches binaries. Provides MCP tools plus a human CLI.",
+  "author": {
+    "name": "ngtuonghung",
+    "url": "https://github.com/ngtuonghung"
+  },
+  "repository": "https://github.com/ngtuonghung/pwninit.py",
+  "license": "MIT",
+  "keywords": ["ctf", "pwn", "glibc", "mcp", "exploitation"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "pwninit",
+    "shortDescription": "CTF pwn challenge setup via MCP",
+    "longDescription": "Automates CTF pwn challenge setup: downloads the matching dynamic loader and required libraries for a challenge's libc, unstrips libc for source-level GDB debugging, patches binaries to run against the target libc, and fetches glibc source files. Exposes MCP tools for Codex agents while keeping a full CLI for humans.",
+    "developerName": "ngtuonghung",
+    "capabilities": ["Interactive"],
+    "defaultPrompt": [
+      "Set up this pwn challenge with pwninit",
+      "Fetch malloc.c source for this challenge's libc",
+      "Patch this binary to run with the given libc"
+    ],
+    "category": "Productivity"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pwninit": {
+      "command": "bash",
+      "args": ["scripts/mcp_launch.sh"]
+    }
+  }
+}

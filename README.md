@@ -11,8 +11,30 @@ Python tool to automate CTF pwn challenge setup, based on [pwninit](https://gith
 - Patches binaries with local library paths using direct byte replacement or `patchelf`.
 - Fetches and extracts glibc source code via `pwnsrc.py` for source-level debugging in GDB.
 - Supports Ubuntu and Debian glibc packages.
+- Ships as a Codex plugin: MCP tools + usage skill for agents, CLI for humans.
 
 ## Installation
+
+### Codex plugin (agents)
+
+From a local clone:
+
+```bash
+git clone https://github.com/ngtuonghung/pwninit.py
+codex plugin marketplace add /path/to/pwninit.py
+codex plugin add pwninit@pwninit
+```
+
+Or straight from GitHub:
+
+```bash
+codex plugin marketplace add https://github.com/ngtuonghung/pwninit.py.git
+codex plugin add pwninit@pwninit
+```
+
+This exposes the MCP tools (`setup_challenge`, `fetch_glibc_source`) and the `pwninit` skill to Codex agents.
+
+### CLI (humans)
 
 Run the setup script:
 
@@ -23,6 +45,15 @@ Run the setup script:
 The script installs `binutils`, `elfutils`, and `patchelf`, creates a virtual environment at `.venv/`, installs Python requirements, creates `~/.cache/pwninit/`, and registers a `pwninit` alias in `~/.bashrc`.
 
 Requires Python 3.10+.
+
+## MCP tools
+
+| Tool | Purpose |
+|------|---------|
+| `setup_challenge(bin_path, libc_path?, ld_path?, no_unstrip?, no_patch?, use_patchelf?, libs_dir?)` | Full challenge setup: fetch loader/libraries, unstrip libc, patch the binary. |
+| `fetch_glibc_source(libc_path, files?, source_archive?)` | Fetch matching glibc source and extract files (e.g. `malloc.c`) next to the libc. |
+
+Both tools return `{"success", "artifacts", "log"}`. Artifacts always land next to the binary.
 
 ## Usage
 
@@ -56,9 +87,7 @@ Options:
 - `-l, --libs <dir>`: Directory to store resolved libraries.
 - `-o, --output <file>`: Output path for patched binary (defaults to `<bin>_patched`).
 
-All artifacts (fetched libraries, symlinks, `<bin>_patched`) are written next to
-the binary, so running `pwninit --bin /path/to/chall` from any working directory
-is safe.
+All artifacts (fetched libraries, symlinks, `<bin>_patched`) are written next to the binary, so running `pwninit --bin /path/to/chall` from any working directory is safe.
 
 ### pwnsrc.py
 
@@ -81,20 +110,18 @@ Run the test suite (no network required):
 make test
 ```
 
-End-to-end tests build hermetic fixtures (fake deb cache, gcc-compiled
-binaries) in temp directories. An optional real-network suite runs only when
-`PWNINIT_E2E_REAL=1` is set:
+End-to-end tests build hermetic fixtures (fake deb cache, gcc-compiled binaries) in temp directories. An optional real-network suite runs only when `PWNINIT_E2E_REAL=1` is set:
 
 ```bash
 make test-real
 ```
 
-### Configuration
+## Configuration
 
 Edit `config.py` to change defaults:
 - `PATCHED_BINARY_SUFFIX`: Suffix for patched binaries (default: `_patched`).
 
-### Patching Methods
+## Patching Methods
 
 `pwninit.py` provides two patching methods:
 
@@ -182,14 +209,14 @@ $ pwninit
 ```bash
 $ ls
 dd1  libc-2.23.so
-$ pwnsrc.py
+$ python3 src/pwnsrc.py
 [*] libc: libc-2.23.so
 [*] libc version: (Ubuntu GLIBC 2.23-0ubuntu10) stable release version 2.23, by Roland McGrath et al.
 [*] Fetching glibc source from https://archive.ubuntu.com/ubuntu/pool/universe/g/glibc/glibc-source_2.23-0ubuntu10_all.deb
 [+] Successfully written glibc-source to 'glibc-source-2.23.tar.xz'
 $ ls
 dd1  glibc-source-2.23.tar.xz  libc-2.23.so
-$ pwnsrc.py --files malloc.c
+$ python3 src/pwnsrc.py --files malloc.c
 [*] libc: libc-2.23.so
 [*] libc version: (Ubuntu GLIBC 2.23-0ubuntu10) stable release version 2.23, by Roland McGrath et al.
 
@@ -199,4 +226,3 @@ $ pwnsrc.py --files malloc.c
 $ ls
 dd1  glibc-source-2.23.tar.xz  libc-2.23.so  malloc.c
 ```
-![](assets/gdb_malloc_example.png)

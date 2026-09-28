@@ -32,7 +32,7 @@ codex plugin marketplace add https://github.com/ngtuonghung/pwninit.py.git
 codex plugin add pwninit@pwninit
 ```
 
-This exposes the MCP tools (`setup_challenge`, `fetch_glibc_source`) and the `pwninit` skill to Codex agents.
+This exposes the MCP tools (`setup_challenge`, `fetch_glibc_source`) and the `pwninit` skill to Codex agents. Everything bootstraps automatically on first launch (Python deps plus system packages when sudo is available); agents just call the tools.
 
 ### CLI (humans)
 

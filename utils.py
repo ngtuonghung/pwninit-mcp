@@ -24,7 +24,7 @@ def run_ar(args, cwd=None):
     return run_command("ar", args, cwd=cwd)
 
 def chmod_x(path):
-    return run_command("chmod", ["+x", path])
+    os.chmod(path, 0o755)
 
 def is_basename(path):
     return os.path.basename(path) == path

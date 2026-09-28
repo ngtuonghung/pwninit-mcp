@@ -10,7 +10,6 @@ import config
 import deb
 import elfutils
 import log
-import templates
 import utils
 
 
@@ -524,14 +523,7 @@ def get_lib_name(lib, strict=False):
             return None
         return basename
     name = match.group(1)
-    #if strict and not name.startswith("lib"):
-    #    return None
     return name
-
-def is_patched(file):
-    if not config.PATCHED_BINARY_SUFFIX:
-        return False
-    return file.endswith(config.PATCHED_BINARY_SUFFIX)
 
 def replace_link(old, new):
     return os.path.islink(old) and not os.path.islink(new)
@@ -558,7 +550,7 @@ def find_binaries(binary=None, libc=None, ld=None, folder=".", libraries=None):
             # * was already patched
             # * is a symlink
             # see if we can replace it
-            if binary is None or is_patched(binary) or replace_link(binary, path):
+            if binary is None or binary.endswith(config.PATCHED_BINARY_SUFFIX) or replace_link(binary, path):
                 # ensure that this isn't a file we know about already
                 # (samefile() returns true for a file and symlink to the file)
                 for path2 in libraries.values():
@@ -586,54 +578,6 @@ def find_binaries(binary=None, libc=None, ld=None, folder=".", libraries=None):
             continue
         libraries[lib_name] = path
     return binary, libraries
-
-
-def fetch_missing_libraries(missing, libraries, version, cache_dir=None):
-    """Batch-fetch multiple libc6 libraries from the libc6 deb in one pass.
-    Uses cache_dir to avoid re-downloading the deb."""
-    missing_list = ', '.join(repr(m) for m in missing)
-    if version is None:
-        log.error(f"Can't fetch {missing_list} without knowing the libc version")
-        return False
-    if version.arch not in version.supported_architectures:
-        log.error(f"Architecture {version.arch!r} not supported by {version.os!r}")
-        return False
-    if not version.pkgname:
-        log.error(f"Can't fetch {missing_list} as libc doesn't have a package name")
-        return False
-    dsts = []
-    for i, needed_lib in enumerate(missing):
-        name = os.path.basename(needed_lib)
-        missing[i] = version.get_libc6_pkg_paths(name)
-        dsts.append(name)
-    url = version.libc_pkgurl
-    print()
-    dsts_list = ', '.join(repr(d) for d in dsts)
-    log.info(f"Fetching {dsts_list} from {url}")
-    successes = []
-    with deb.DebPackage(url, cache_dir=cache_dir) as pkg:
-        tar = pkg.tar
-        if tar is None:
-            log.error(f"Failed to fetch files: {pkg.error!r}")
-            return False
-        for files, dst in zip(missing, dsts):
-            fsrc = None
-            for file in files:
-                try:
-                    fsrc = tar.extractfile(file)
-                    break
-                except KeyError:
-                    pass
-            else:
-                log.error(f"Failed to fetch {dst!r}")
-                continue
-            with open(dst, "wb+") as fdst, fsrc:
-                shutil.copyfileobj(fsrc, fdst)
-            successes.append(dst)
-            log.success(f"Successfully fetched {dst!r}")
-    for lib in successes:
-        libraries[get_lib_name(lib)] = lib
-    return len(dsts) == len(successes)
 
 
 def get_stripped_libraries(libraries):
@@ -815,32 +759,6 @@ def patch_binary_patchelf(path, libraries, output=None, dont_patch=None):
     return output
 
 
-def write_solvepy(binary, libraries, template=None):
-    if template is None:
-        template = config.DEFAULT_TEMPLATE
-    script = templates.get_template(template)
-    if script is None:
-        log.error("Failed to get template")
-        return False
-    bindings = []
-    binary_name = config.TEMPLATE_BINARY_NAME
-    bindings.append(f"{binary_name} = context.binary = ELF({binary!r}, checksec=False)")
-    # these may not exist if the binary is static
-    libc = libraries.get("libc", None)
-    ld = libraries.get("ld", None)
-    if libc:
-        libc_name = config.TEMPLATE_LIBC_NAME
-        bindings.append(f"{libc_name} = ELF({libc!r}, checksec=False)")
-    if ld:
-        ld_name = config.TEMPLATE_LD_NAME
-        bindings.append(f"{ld_name} = ELF({ld!r}, checksec=False)")
-    with open("solve.py", "w+") as f:
-        f.write(script.format(bindings="\n".join(bindings)))
-    utils.chmod_x("solve.py")
-    log.success("Successfully written solve.py")
-    return True
-
-
 def get_libc_version(libc, arch=None):
     try:
         f = open(libc, "rb")
@@ -882,25 +800,29 @@ if __name__ == "__main__":
         help="Disable unstripping of libraries (ignored if binary is static)")
     ap.add_argument("-np", "--no-patch", default=False, action="store_true",
         help="Disable patching of binary (ignored if binary is static)")
-    ap.add_argument("-ns", "--no-solvepy", default=False, action="store_true",
-        help="Disable writing solve.py")
-    ap.add_argument("--use-patchelf", default=config.USE_PATCHELF,
+    ap.add_argument("--use-patchelf", default=False,
         action="store_true",
         help="Use patchelf for patching the binary")
     ap.add_argument("-l", "--libs", default=None, dest="libs",
         help="Path of folder to store libraries in (ignored if binary is static)")
-    ap.add_argument("-t", "--template", default=config.DEFAULT_TEMPLATE,
-        dest="template", choices=templates.get_available_templates(),
-        help=("Template of solve script. "
-            f"Templates are stored in {templates.get_templates_folder()}"))
     ap.add_argument("-o", "--output", default=None, dest="output",
         help=("Place patched binary into OUTPUT "
             f"(defaults to BINARY{config.PATCHED_BINARY_SUFFIX})"))
 
     args = ap.parse_args()
+    if args.binary:
+        # Anchor everything (fetched libs, symlinks, patched binary) to the
+        # binary's directory, not the invocation cwd.
+        bindir = os.path.dirname(os.path.abspath(args.binary))
+        orig_cwd = os.getcwd()
+        os.chdir(bindir)
+        args.binary = os.path.basename(args.binary)
+        for attr in ("libc", "ld", "output"):
+            path = getattr(args, attr)
+            if path and os.path.dirname(os.path.abspath(os.path.join(orig_cwd, path))) == bindir:
+                setattr(args, attr, os.path.basename(path))
     do_unstrip = not args.no_unstrip
     do_patch = not args.no_patch
-    do_solvepy = not args.no_solvepy
     binary, libraries = find_binaries(binary=args.binary, libc=args.libc, ld=args.ld)
     if binary is None:
         log.fatal("No binary was supplied or found!")
@@ -933,8 +855,6 @@ if __name__ == "__main__":
                 # normally an absolute path, so this means it's definitely patched
                 dont_patch.add(requested_linker)
                 libraries["ld"] = requested_linker
-            #if not any(lambda x: requested_linker.startswith(x), ["/lib/", "/lib64/"]):
-            #    dont_patch.add(requested_linker)
             libraries = runpath_libs | libraries
 
     if dynamic is None:
@@ -1024,11 +944,3 @@ if __name__ == "__main__":
             binary = patch_binary(binary, libraries, output=args.output, dont_patch=dont_patch)
 
     utils.chmod_x(binary)
-    if do_solvepy:
-        print()
-        log.info("Writing solve.py")
-        try:
-            open("solve.py", "r").close()
-            log.warning("solve.py already exists")
-        except OSError:
-            write_solvepy(binary, libraries, template=args.template)

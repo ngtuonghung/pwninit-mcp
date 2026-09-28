@@ -7,6 +7,7 @@ import requests
 import tqdm
 import zstandard
 
+import log
 import utils
 
 
@@ -37,8 +38,7 @@ class DebPackage:
                 os.makedirs(cdir, exist_ok=True)
                 cached_path = os.path.abspath(os.path.join(cdir, debname))
                 if os.path.isfile(cached_path):
-                    import log as _log
-                    _log.info(f"Using cached {debname!r} from {cdir!r}")
+                    log.info(f"Using cached {debname!r} from {cdir!r}")
                     self.tar = self._get_data_tar(cached_path)
                     return
             except OSError:

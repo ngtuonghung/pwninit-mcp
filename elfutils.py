@@ -97,12 +97,6 @@ def get_runpath_from_dynamic(dynamic):
     return runpath or rpath
 
 
-def get_runpath(elf):
-    dynamic = get_dynamic(elf)
-    if dynamic is None:
-        return []
-    return get_runpath_from_dynamic(dynamic)
-
 def get_arch(elf):
     return {
         ('EM_X86_64', 64): 'amd64',

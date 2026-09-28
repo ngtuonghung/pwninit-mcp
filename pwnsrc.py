@@ -40,7 +40,7 @@ if __name__ == "__main__":
         # seems to be the only one used?
         ext = "xz"
         full_ext = f".tar.{ext}"
-        source = config.GLIBC_SOURCE_FORMAT.format(version=version.version_string, ext=full_ext)
+        source = f"glibc-source-{version.version_string}{full_ext}"
         # if this file already exists, don't fetch it again
         if not os.path.exists(source):
             url = version.libc_src_pkgurl

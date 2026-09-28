@@ -9,7 +9,6 @@ Python tool to automate CTF pwn challenge setup, based on [pwninit](https://gith
 - Downloads debug symbols and unstrips libraries.
 - Caches `.deb` archives in `~/.cache/pwninit/` and `./lib/`.
 - Patches binaries with local library paths using direct byte replacement or `patchelf`.
-- Generates exploit scripts (`solve.py`) from customizable templates.
 - Fetches and extracts glibc source code via `pwnsrc.py` for source-level debugging in GDB.
 - Supports Ubuntu and Debian glibc packages.
 
@@ -47,11 +46,13 @@ Options:
 - `--ld <file>`: Target interpreter.
 - `-nu, --no-unstrip`: Skip unstripping debug symbols.
 - `-np, --no-patch`: Skip patching the binary.
-- `-ns, --no-solvepy`: Skip writing `solve.py`.
 - `--use-patchelf`: Patch using `patchelf` instead of direct byte replacement.
 - `-l, --libs <dir>`: Directory to store resolved libraries.
-- `-t, --template <name>`: Template for `solve.py` (`default` or `static`).
 - `-o, --output <file>`: Output path for patched binary (defaults to `<bin>_patched`).
+
+All artifacts (fetched libraries, symlinks, `<bin>_patched`) are written next to
+the binary, so running `pwninit --bin /path/to/chall` from any working directory
+is safe.
 
 ### pwnsrc.py
 
@@ -66,22 +67,10 @@ python3 pwnsrc.py --files malloc.c
 python3 pwnsrc.py --files glibc-2.31/malloc/malloc.c
 ```
 
-### Solve Script Templates
-
-Select templates with `-t <template_name>`. The tool loads templates from `templates/`:
-- `default`: Pwntools template with terminal auto-detection, local/remote connectors, memory limit guards, and GDB attach logic.
-- `static`: Minimal template for statically linked binaries.
-
-Templates replace `{bindings}` with ELF initializers for the binary, libc, and loader.
-
 ### Configuration
 
 Edit `config.py` to change defaults:
-- `TEMPLATE_BINARY_NAME`: Variable name for binary in `solve.py` (default: `e`).
-- `TEMPLATE_LIBC_NAME`: Variable name for libc (default: `libc`).
-- `TEMPLATE_LD_NAME`: Variable name for loader (default: `ld`).
-- `DEFAULT_TEMPLATE`: Default template (default: `default`).
-- `USE_PATCHELF`: Set `True` to use `patchelf` by default.
+- `PATCHED_BINARY_SUFFIX`: Suffix for patched binaries (default: `_patched`).
 
 ### Patching Methods
 
@@ -123,11 +112,8 @@ $ pwninit
 [*] Symlinking './libc' -> 'libc.so.6'
 [*] Symlinking './libpthread' -> 'libpthread.so.0'
 [+] Successfully wrote patched binary to 'chall_patched'
-
-[*] Writing solve.py
-[+] Successfully written solve.py
 $ ls
-chall  chall_patched  ld  ld-linux-x86-64.so.2  libc  libc.so.6  libpthread  libpthread.so.0  solve.py
+chall  chall_patched  ld  ld-linux-x86-64.so.2  libc  libc.so.6  libpthread  libpthread.so.0
 ```
 
 ### Challenge requiring OpenSSL (`libcrypto.so.1.1`)
@@ -167,9 +153,6 @@ $ pwninit
 [*] Symlinking './libcrypto' -> 'libcrypto.so.1.1'
 [*] Symlinking './libc' -> 'libc.so.6'
 [+] Successfully wrote patched binary to 'chall_patched'
-
-[*] Writing solve.py
-[+] Successfully written solve.py
 ```
 
 ### Fetching glibc source code

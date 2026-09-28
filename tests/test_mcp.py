@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from fastmcp import Client
+from fastmcp.client.transports import StdioTransport
 
 import helpers
 from mcp_server import mcp
@@ -63,6 +64,31 @@ class TestMcpTools(unittest.TestCase):
                 return {t.name for t in await client.list_tools()}
 
         self.assertEqual(run(go()), {"setup_challenge", "fetch_glibc_source"})
+
+    def test_launcher_stdio_end_to_end(self):
+        """The exact launch path Codex uses: spawn scripts/mcp_launch.sh over
+        stdio, handshake, and call a tool for real."""
+        async def go():
+            transport = StdioTransport(
+                "bash", [os.path.join(REPO, "scripts", "mcp_launch.sh")]
+            )
+            async with Client(transport) as client:
+                names = {t.name for t in await client.list_tools()}
+                result = await client.call_tool(
+                    "setup_challenge",
+                    {
+                        "bin_path": str(self.binary),
+                        "libc_path": str(self.libc),
+                        "no_unstrip": True,
+                    },
+                )
+            return names, result
+
+        names, result = run(go())
+        self.assertEqual(names, {"setup_challenge", "fetch_glibc_source"})
+        data = getattr(result, "data", None) or result.structured_content
+        self.assertTrue(data["success"], data["log"])
+        self.assertIn("chall_patched", data["artifacts"])
 
     def test_setup_challenge_end_to_end(self):
         result = self.call(

@@ -6,7 +6,7 @@
     "name": "ngtuonghung",
     "url": "https://github.com/ngtuonghung"
   },
-  "repository": "https://github.com/ngtuonghung/pwninit.py",
+  "repository": "https://github.com/ngtuonghung/pwninit-mcp",
   "license": "MIT",
   "keywords": ["ctf", "pwn", "glibc", "mcp", "exploitation"],
   "skills": "./skills/",

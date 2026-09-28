@@ -20,15 +20,15 @@ Python tool to automate CTF pwn challenge setup, based on [pwninit](https://gith
 From a local clone:
 
 ```bash
-git clone https://github.com/ngtuonghung/pwninit.py
-codex plugin marketplace add /path/to/pwninit.py
+git clone https://github.com/ngtuonghung/pwninit-mcp
+codex plugin marketplace add /path/to/pwninit-mcp
 codex plugin add pwninit@pwninit
 ```
 
 Or straight from GitHub:
 
 ```bash
-codex plugin marketplace add https://github.com/ngtuonghung/pwninit.py.git
+codex plugin marketplace add https://github.com/ngtuonghung/pwninit-mcp.git
 codex plugin add pwninit@pwninit
 ```
 

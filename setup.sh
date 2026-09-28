@@ -36,7 +36,7 @@ mkdir -p "$HOME/.cache/pwninit"
 
 echo "[*] Appending alias to ~/.bashrc..."
 
-ALIAS_LINE="alias pwninit='\"$VENV_DIR/bin/python3\" \"$SCRIPT_DIR/pwninit.py\" -t default \"\$@\"'"
+ALIAS_LINE="alias pwninit='\"$VENV_DIR/bin/python3\" \"$SCRIPT_DIR/src/pwninit.py\" \"\$@\"'"
 
 if grep -qF "alias pwninit=" ~/.bashrc; then
     echo "[!] Alias 'pwninit' already exists in ~/.bashrc, updating if needed."

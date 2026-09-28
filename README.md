@@ -34,6 +34,12 @@ Run `pwninit.py` in the directory containing the target binary and libc:
 pwninit
 ```
 
+Or without the alias:
+
+```bash
+python3 src/pwninit.py
+```
+
 Specify inputs directly if needed:
 
 ```bash
@@ -60,11 +66,27 @@ Download and extract glibc source files for GDB source stepping:
 
 ```bash
 # Download glibc source archive for the local libc
-python3 pwnsrc.py
+python3 src/pwnsrc.py
 
 # Extract specific source files
-python3 pwnsrc.py --files malloc.c
-python3 pwnsrc.py --files glibc-2.31/malloc/malloc.c
+python3 src/pwnsrc.py --files malloc.c
+python3 src/pwnsrc.py --files glibc-2.31/malloc/malloc.c
+```
+
+## Tests
+
+Run the test suite (no network required):
+
+```bash
+make test
+```
+
+End-to-end tests build hermetic fixtures (fake deb cache, gcc-compiled
+binaries) in temp directories. An optional real-network suite runs only when
+`PWNINIT_E2E_REAL=1` is set:
+
+```bash
+make test-real
 ```
 
 ### Configuration

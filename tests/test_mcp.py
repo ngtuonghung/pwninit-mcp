@@ -61,9 +61,14 @@ class TestMcpTools(unittest.TestCase):
     def test_tools_listed(self):
         async def go():
             async with Client(mcp) as client:
-                return {t.name for t in await client.list_tools()}
+                tools = await client.list_tools()
+                return tools, {tool.name for tool in tools}
 
-        self.assertEqual(run(go()), {"setup_challenge", "fetch_glibc_source"})
+        tools, names = run(go())
+        self.assertEqual(names, {"setup_challenge", "fetch_glibc_source"})
+        schemas = {tool.name: tool.input_schema for tool in tools}
+        self.assertIn("libc_path", schemas["setup_challenge"]["required"])
+        self.assertNotIn("no_patch", schemas["setup_challenge"]["properties"])
 
     def test_launcher_stdio_end_to_end(self):
         """The exact launch path Codex uses: spawn scripts/mcp_launch.sh over
@@ -89,6 +94,7 @@ class TestMcpTools(unittest.TestCase):
         data = getattr(result, "data", None) or result.structured_content
         self.assertTrue(data["success"], data["log"])
         self.assertIn("chall_patched", data["artifacts"])
+        self.assertIn("Use the patched binary at", data["message"])
 
     def test_setup_challenge_end_to_end(self):
         result = self.call(
@@ -103,14 +109,53 @@ class TestMcpTools(unittest.TestCase):
         self.assertTrue(data["success"], data["log"])
         self.assertIn("chall_patched", data["artifacts"])
         self.assertTrue((self.chal / "chall_patched").is_file())
+        self.assertIn(str(self.chal / "chall_patched"), data["message"])
         self.assertTrue((self.chal / "ld").is_symlink())
         self.assertTrue((self.chal / "libc").is_symlink())
 
-    def test_setup_challenge_missing_binary(self):
-        result = self.call("setup_challenge", {"bin_path": "/nonexistent/binary"})
+    def test_setup_challenge_static_binary_fails_without_patch(self):
+        static_binary = self.chal / "static_chall"
+        helpers.compile_binary(static_binary, static=True)
+        result = self.call(
+            "setup_challenge",
+            {
+                "bin_path": str(static_binary),
+                "libc_path": str(self.libc),
+                "no_unstrip": True,
+            },
+        )
         data = getattr(result, "data", None) or result.structured_content
         self.assertFalse(data["success"])
-        self.assertIn("not found", data["log"])
+        self.assertIn("no patched binary was created", data["message"])
+        self.assertIn("statically linked", data["log"])
+        self.assertFalse((self.chal / "static_chall_patched").exists())
+
+    def test_setup_challenge_requires_libc(self):
+        result = self.call(
+            "setup_challenge",
+            {"bin_path": str(self.binary), "libc_path": ""},
+        )
+        data = getattr(result, "data", None) or result.structured_content
+        self.assertFalse(data["success"])
+        self.assertIn("libc not found", data["message"])
+
+    def test_setup_challenge_missing_libc(self):
+        result = self.call(
+            "setup_challenge",
+            {"bin_path": str(self.binary), "libc_path": str(self.base / "no-libc")},
+        )
+        data = getattr(result, "data", None) or result.structured_content
+        self.assertFalse(data["success"])
+        self.assertIn("libc not found", data["message"])
+
+    def test_setup_challenge_missing_binary(self):
+        result = self.call(
+            "setup_challenge",
+            {"bin_path": "/nonexistent/binary", "libc_path": "/nonexistent/libc"},
+        )
+        data = getattr(result, "data", None) or result.structured_content
+        self.assertFalse(data["success"])
+        self.assertIn("binary not found", data["message"])
 
     def test_fetch_source_missing_archive_fails_cleanly(self):
         result = self.call(

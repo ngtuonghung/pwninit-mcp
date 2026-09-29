@@ -50,10 +50,10 @@ Requires Python 3.10+.
 
 | Tool | Purpose |
 |------|---------|
-| `setup_challenge(bin_path, libc_path?, ld_path?, no_unstrip?, no_patch?, use_patchelf?, libs_dir?)` | Full challenge setup: fetch loader/libraries, unstrip libc, patch the binary. |
+| `setup_challenge(bin_path, libc_path, ld_path?, no_unstrip?, use_patchelf?, libs_dir?)` | Full challenge setup: fetch loader/libraries, unstrip libc, and patch the binary. |
 | `fetch_glibc_source(libc_path, files?, source_archive?)` | Fetch matching glibc source and extract files (e.g. `malloc.c`) next to the libc. |
 
-Both tools return `{"success", "artifacts", "log"}`. Artifacts always land next to the binary.
+Both tools return `{"success", "message", "artifacts", "log"}`. `setup_challenge` succeeds only when `<bin>_patched` is created and tells the agent to use that binary. Artifacts always land next to the binary.
 
 ## Usage
 

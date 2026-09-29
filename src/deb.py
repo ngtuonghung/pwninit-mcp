@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 import tarfile
 import tempfile
 
@@ -54,7 +55,7 @@ class DebPackage:
         resp = None
         for u in urls:
             try:
-                r = requests.get(u, stream=True)
+                r = requests.get(u, stream=True, timeout=(10, 30))
                 if r.status_code == 200:
                     resp = r
                     break
@@ -68,7 +69,7 @@ class DebPackage:
         total = int(resp.headers.get("Content-Length", 0)) or None
         with open(debpath, "wb+") as f, tqdm.tqdm(
             total=total, unit="B", unit_scale=True, unit_divisor=1024,
-            desc=debname, leave=False
+            desc=debname, leave=False, disable=not sys.stderr.isatty()
         ) as bar:
             for chunk in resp.iter_content(chunk_size=65536):
                 f.write(chunk)

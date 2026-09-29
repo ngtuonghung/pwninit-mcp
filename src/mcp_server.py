@@ -15,11 +15,19 @@ def _run_cli(script, args, cwd):
     proc = subprocess.run(
         [sys.executable, os.path.join(SRC_DIR, script)] + args,
         cwd=cwd,
-        capture_output=True,
+        stdout=subprocess.PIPE,
         text=True,
         timeout=600,
+        stderr=subprocess.STDOUT,
     )
-    return proc.returncode == 0, (proc.stdout + proc.stderr).strip()
+    return proc.returncode == 0, proc.stdout.strip()
+
+
+def _run_cli_safe(script, args, cwd):
+    try:
+        return _run_cli(script, args, cwd)
+    except subprocess.TimeoutExpired:
+        return False, f"timed out after 600s: {' '.join(args)}"
 
 
 def _new_files(directory, before):
@@ -75,7 +83,7 @@ def setup_challenge(
         args.append("--use-patchelf")
     if libs_dir:
         args += ["--libs", os.path.abspath(libs_dir)]
-    success, log = _run_cli("pwninit.py", args, cwd)
+    success, log = _run_cli_safe("pwninit.py", args, cwd)
     return {"success": success, "artifacts": _new_files(cwd, before), "log": log}
 
 
@@ -110,7 +118,7 @@ def fetch_glibc_source(
         args += ["--source", os.path.abspath(source_archive)]
     if files:
         args += ["--files"] + list(files)
-    success, log = _run_cli("pwnsrc.py", args, cwd)
+    success, log = _run_cli_safe("pwnsrc.py", args, cwd)
     return {"success": success, "artifacts": _new_files(cwd, before), "log": log}
 
 

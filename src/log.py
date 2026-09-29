@@ -1,6 +1,8 @@
 import sys
 
 def colourize(x, colour):
+    if not sys.stdout.isatty():
+        return x
     return colour + x + "\x1b[0m"
 def red(x):
     return colourize(x, "\x1b[31m")
